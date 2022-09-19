@@ -38,14 +38,17 @@ def rle_to_indices(rle_string, imsize=(256, 1600), fill_color=(1, 0, 0, 0.5)):
     return xs.astype(int), ys.astype(int)
 
 
-def display_img_with_mask(df, image_id, figsize=(16, 12), display_classes=[], x_window=(None, None)):
+def display_img_with_mask(df, image_id, figsize=(16, 12), display_classes=[], x_window=(None, None), ax=None):
     display_classes = display_classes or [1, 2, 3, 4]
     fname = f'../data/train_images/{image_id}'
     img = plt.imread(fname)
 
-    plt.figure(figsize=figsize)
+    if ax is None:
+        plt.figure(figsize=figsize)
+        ax = plt.gca()
+        
     img = img[:, x_window[0]:x_window[1]]
-    plt.imshow(img)
+    ax.imshow(img)
 
     colors = [
         (1, 0, 0, 0.25),
@@ -59,6 +62,6 @@ def display_img_with_mask(df, image_id, figsize=(16, 12), display_classes=[], x_
     for color, row in zip(colors, df[df_mask].sort_values(by='ClassId').itertuples()):
         mask = rle_to_mask(row.EncodedPixels, fill_color=color)
         mask = mask[:, x_window[0]:x_window[1]]
-        plt.imshow(mask)
+        ax.imshow(mask)
         handles.append(mpatches.Patch(color=color, label=f'Defect {row.ClassId}'))
-    plt.legend(handles=handles)
+    ax.legend(handles=handles)
