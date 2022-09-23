@@ -185,14 +185,18 @@ class InstanceDataset(torch.utils.data.Dataset):
 
 
 class RegularizationDataset(torch.utils.data.IterableDataset):
-    def __init__(self, instances_df, image_dir, window_size=150, instance_size_margin=5, instance_center_tol=42, yield_images=False):
+    def __init__(self, instances_df, image_dir, window_size=None, instance_size_margin=5, instance_center_tol=42, yield_images=False):
         super(RegularizationDataset).__init__()
 
-        instances_df['window_size'] = window_size
         instances_df['instance_size'] = instances_df.instance_max_x - instances_df.instance_min_x
         quantile_levels = [.9, .95, .99]
         size_quantiles = instances_df.instance_size.quantile(quantile_levels)
         log.info(f'Instance size quantiles (quantile_levels={quantile_levels}): {size_quantiles.values}')
+        if not window_size:
+            window_size = size_quantiles.loc[.90]
+
+        log.info(f'Using window_size={window_size}')
+        instances_df['window_size'] = window_size
 
         self.image_dir = image_dir
         self.yield_images = yield_images
