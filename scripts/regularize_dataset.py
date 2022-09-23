@@ -218,6 +218,9 @@ class RegularizationDataset(torch.utils.data.IterableDataset):
         indices = self.instances_df.index[start:end]
         my_instances = self.instances_df.loc[indices, :].copy()
 
+        if my_instances.empty:
+            return
+
         log.debug(f'For worker {torch.utils.data.get_worker_info().id}, '
                   f'Getting overlapping instances with window_size={self.window_size}')
         my_instances['overlapping_instances'] = my_instances.apply(
