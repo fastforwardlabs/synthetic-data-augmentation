@@ -12,6 +12,8 @@ import os
 import multiprocessing
 import tqdm
 
+from dataset_utils import has_blank_space
+
 
 logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
 log = logging.getLogger()
@@ -141,18 +143,6 @@ def overlaps_edge(row, img_width=1600):
     extra = row.window_size % 2
     min_x, max_x = row.instance_center_x - hw, row.instance_center_x + hw + extra
     return (min_x < 0) or (max_x > img_width)
-
-
-def has_blank_space(img, tol=25):
-    """
-    The heuristic for detecting blank space is if one of the image columns is close to zero.
-    If the mean of all pixel vals is less than tol, we say it's close to zero.
-
-    :param img: A grayscale image with the x-dimension in the first index.
-    :param tol: A column's mean pixel values should be below this level.
-    :return:
-    """
-    return np.any([np.mean(col) < tol for col in img])
 
 
 class InstanceDataset(torch.utils.data.Dataset):
