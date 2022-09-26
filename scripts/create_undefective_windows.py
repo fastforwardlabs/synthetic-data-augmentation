@@ -60,7 +60,7 @@ class UndefectiveWindowDataset(torch.utils.data.IterableDataset):
             min_x, max_x = int(window_center - hw), int(window_center + hw + extra)
             img = img[..., min_x:max_x]  # Tensor order is CHW
 
-            if has_blank_space(img.numpy()):
+            if has_blank_space(img.numpy().transpose((2, 0, 1))):
                 log.debug(f'Discarding window with blanks space')
                 continue
 
