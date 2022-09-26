@@ -37,7 +37,7 @@ class UndefectiveWindowDataset(torch.utils.data.IterableDataset):
         assert worker_info is not None, "This dataset is only configured to work with multiprocess loading"
         per_worker = int(np.ceil(self.num_windows / worker_info.num_workers))
         wid = worker_info.id
-        num_windows_for_this_worker = min(per_worker, self.num_windows - (1 + wid) * per_worker)
+        num_windows_for_this_worker = min(per_worker, self.num_windows - wid * per_worker)
         worker_random_seed = 42 + wid  # Needed for numpy
         return self.image_generator(num_windows_for_this_worker, random_seed=worker_random_seed)
 
