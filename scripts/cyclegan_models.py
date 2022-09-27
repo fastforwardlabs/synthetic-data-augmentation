@@ -77,3 +77,34 @@ class GeneratorModel(torch.nn.Module):
     def forward(self, input):
         log.debug(f'Input shape={input.shape}')
         return self.model(input)
+
+
+class PatchGANDiscriminator(torch.nn.Module):
+    def __init__(self, cin):
+        # Architecture according to "Unpaired Image-to-Image Translation
+        # using Cycle-Consistent Adversarial Networks," by Zhu et al.
+        super(PatchGANDiscriminator, self).__init__()
+
+        self.model = torch.nn.Sequential(
+            torch.nn.Conv2d(in_channels=cin, out_channels=64, kernel_size=4, stride=2, padding=1, bias=False),
+            torch.nn.InstanceNorm2d(num_features=64),
+
+            torch.nn.Conv2d(in_channels=64, out_channels=128, kernel_size=4, stride=2, padding=1, bias=False),
+            torch.nn.InstanceNorm2d(num_features=128),
+            torch.nn.LeakyReLU(negative_slope=0.2),
+
+            torch.nn.Conv2d(in_channels=128, out_channels=256, kernel_size=4, stride=2, padding=1, bias=False),
+            torch.nn.InstanceNorm2d(num_features=256),
+            torch.nn.LeakyReLU(negative_slope=0.2),
+
+            torch.nn.Conv2d(in_channels=256, out_channels=512, kernel_size=4, stride=2, padding=1, bias=False),
+            torch.nn.InstanceNorm2d(num_features=512),
+            torch.nn.LeakyReLU(negative_slope=0.2),
+
+            torch.nn.Conv2d(in_channels=512, out_channels=1, kernel_size=4, stride=2, padding=1, bias=False),
+        )
+
+    def forward(self, input):
+        output = self.model(input)
+        global_average_pooling = torch.nn.AvgPool2d(kernel_size=output.shape[2:], padding=0, stride=1)
+        return global_average_pooling(output)
