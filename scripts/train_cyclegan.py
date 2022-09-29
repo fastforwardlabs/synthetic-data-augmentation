@@ -79,25 +79,30 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
     #                                    ^^^^^^^^^^^^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^^^^
     #                                    Adversarial Loss             Forward cycle consistency loss         Backward cycle consistency loss
     #          Where the same notation for D_x, D_y, G_x, and G_y hold, and the cycle consistency losses are weighted
-    #          with hyperparameters lambda_f and lambda_b, and we use an analagous loss term for y_gen.
+    #          with hyperparameters lambda_f and lambda_b, and we use an analogous loss term for y_gen.
 
     disc_loss_fn = torch.nn.MSELoss()
+    cycle_loss_fn = torch.nn.L1Loss()
     disc_optimizer = torch.optim.Adam(itertools.chain(x_disc.parameters(), y_disc.parameters()), lr=0.0002)
     gen_optimizer = torch.optim.Adam(itertools.chain(y_gen.parameters(), x_gen.parameters()), lr=0.0002)
     fake_x_history = None  # A buffer to hold the history of fake x images.
     fake_y_history = None  # A buffer to hold the history of fake x images.
-    max_history_buffer_batches = 2
+    max_history_buffer_batches = 10
     tboard_summary_writer = SummaryWriter()
     global_step = 0
+    lambda_f = lambda_b = 10
     for epoch_num in range(n_epochs):
         for i, (real_x_batch, real_y_batch) in enumerate(zip(x_domain, y_domain)):
             log.debug(f'epoch={epoch_num}, batch={i}')
 
-            batch_size = real_x_batch.shape[0]
-            assert batch_size == real_y_batch.shape[0], \
-                f'Batch sizes must be identical, but batch shapes were {real_x_batch.shape} and {real_y_batch.shape}'
-            fake_x_batch = y_gen(real_y_batch.to('cuda', non_blocking=True))
-            fake_y_batch = x_gen(real_x_batch.to('cuda', non_blocking=True))
+            x_batch_size = real_x_batch.shape[0]
+            y_batch_size = real_y_batch.shape[0]
+            log.debug(f'x_batch_size={x_batch_size}, y_batch_size={y_batch_size}')
+
+            real_x_batch_on_cuda = real_x_batch.to('cuda', non_blocking=True)
+            real_y_batch_on_cuda = real_y_batch.to('cuda', non_blocking=True)
+            fake_x_batch = y_gen(real_y_batch_on_cuda)
+            fake_y_batch = x_gen(real_x_batch_on_cuda)
 
             if fake_x_history is None:
                 fake_x_history = fake_x_batch.detach().to('cpu', non_blocking=True)
@@ -105,39 +110,55 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
             if fake_y_history is None:
                 fake_y_history = fake_y_batch.detach().to('cpu', non_blocking=True)
 
-            num_historical_examples = fake_x_history.shape[0]
+            num_historical_fake_x_examples = fake_x_history.shape[0]
+            num_historical_fake_y_examples = fake_y_history.shape[0]
+            log.debug(f'num_historical_y_examples={num_historical_fake_y_examples}')
 
             ################################
             # Update discriminator weights #
             ################################
             disc_optimizer.zero_grad()
 
-            historical_fake_indices = torch.multinomial(input=torch.ones(num_historical_examples), num_samples=batch_size//2, replacement=False)
-            historical_fake_x_batch = torch.index_select(input=fake_x_history, dim=0, index=historical_fake_indices)
-            historical_fake_y_batch = torch.index_select(input=fake_y_history, dim=0, index=historical_fake_indices)
+            historical_fake_x_indices = torch.multinomial(input=torch.ones(num_historical_fake_x_examples), num_samples=y_batch_size//2,
+                                                          replacement=True)
+            historical_fake_x_batch = torch.index_select(input=fake_x_history, dim=0, index=historical_fake_x_indices)
+            historical_fake_y_indices = torch.multinomial(input=torch.ones(num_historical_fake_y_examples), num_samples=x_batch_size//2,
+                                                          replacement=True)
+            historical_fake_y_batch = torch.index_select(input=fake_y_history, dim=0, index=historical_fake_y_indices)
 
-            current_fake_indices = torch.multinomial(input=torch.ones(batch_size), num_samples=batch_size//2, replacement=False).to('cuda', non_blocking=True)
-            current_fake_x_batch = torch.index_select(input=fake_x_batch, dim=0, index=current_fake_indices)
-            current_fake_y_batch = torch.index_select(input=fake_y_batch, dim=0, index=current_fake_indices)
+            current_fake_x_indices = torch.multinomial(input=torch.ones(y_batch_size), num_samples=y_batch_size//2, replacement=False).to('cuda', non_blocking=True)
+            current_fake_x_batch = torch.index_select(input=fake_x_batch, dim=0, index=current_fake_x_indices)
+            current_fake_y_indices = torch.multinomial(input=torch.ones(x_batch_size), num_samples=x_batch_size//2, replacement=False).to('cuda', non_blocking=True)
+            current_fake_y_batch = torch.index_select(input=fake_y_batch, dim=0, index=current_fake_y_indices)
 
-            real_labels = torch.ones(batch_size, 1, 1, 1).to('cuda', non_blocking=True)
-            fake_labels = torch.zeros(batch_size//2, 1, 1, 1).to('cuda', non_blocking=True)
+            log.debug(f'real_x_batch_on_cuda.shape={real_x_batch_on_cuda.shape}')
+            log.debug(f'historical_fake_x_batch.shape={historical_fake_x_batch.shape}')
+            log.debug(f'historical_fake_y_batch.shape={historical_fake_y_batch.shape}')
+            log.debug(f'real_y_batch_on_cuda.shape={real_y_batch_on_cuda.shape}')
+            log.debug(f'current_fake_x_batch.shape={current_fake_x_batch.shape}')
+            log.debug(f'current_fake_y_batch.shape={current_fake_y_batch.shape}')
 
-            x_real_loss = disc_loss_fn(x_disc(real_x_batch.to('cuda', non_blocking=True)), real_labels)
-            x_fake_loss = disc_loss_fn(x_disc(historical_fake_x_batch.to('cuda', non_blocking=True)), fake_labels)
-            x_fake_loss += disc_loss_fn(x_disc(current_fake_x_batch), fake_labels)
+            real_x_labels = torch.ones(x_batch_size, 1, 1, 1).to('cuda', non_blocking=True)
+            fake_x_labels = torch.zeros(y_batch_size//2, 1, 1, 1).to('cuda', non_blocking=True)
+
+            x_real_loss = disc_loss_fn(x_disc(real_x_batch_on_cuda), real_x_labels)
+            x_fake_loss = disc_loss_fn(x_disc(historical_fake_x_batch.to('cuda', non_blocking=True)), fake_x_labels)
+            x_fake_loss += disc_loss_fn(x_disc(current_fake_x_batch), fake_x_labels)
             x_disc_loss = x_real_loss + x_fake_loss
-            tboard_summary_writer.add_scalar('train/x_disc_loss', x_disc_loss.item(), global_step=global_step)
             tboard_summary_writer.add_scalar('train/x_disc_loss/real', x_real_loss.item(), global_step=global_step)
             tboard_summary_writer.add_scalar('train/x_disc_loss/fake', x_fake_loss.item(), global_step=global_step)
+            tboard_summary_writer.add_scalar('train/x_disc_loss', x_disc_loss.item(), global_step=global_step)
 
-            y_real_loss = disc_loss_fn(y_disc(real_y_batch.to('cuda', non_blocking=True)), real_labels)
-            y_fake_loss = disc_loss_fn(y_disc(historical_fake_y_batch.to('cuda', non_blocking=True)), fake_labels)
-            y_fake_loss += disc_loss_fn(y_disc(current_fake_y_batch), fake_labels)
+            real_y_labels = torch.ones(y_batch_size, 1, 1, 1).to('cuda', non_blocking=True)
+            fake_y_labels = torch.zeros(x_batch_size // 2, 1, 1, 1).to('cuda', non_blocking=True)
+
+            y_real_loss = disc_loss_fn(y_disc(real_y_batch_on_cuda), real_y_labels)
+            y_fake_loss = disc_loss_fn(y_disc(historical_fake_y_batch.to('cuda', non_blocking=True)), fake_y_labels)
+            y_fake_loss += disc_loss_fn(y_disc(current_fake_y_batch), fake_y_labels)
             y_disc_loss = y_real_loss + y_fake_loss
-            tboard_summary_writer.add_scalar('train/y_disc_loss', y_disc_loss.item(), global_step=global_step)
             tboard_summary_writer.add_scalar('train/y_disc_loss/real', y_real_loss.item(), global_step=global_step)
             tboard_summary_writer.add_scalar('train/y_disc_loss/fake', y_fake_loss.item(), global_step=global_step)
+            tboard_summary_writer.add_scalar('train/y_disc_loss', y_disc_loss.item(), global_step=global_step)
 
             disc_loss = x_disc_loss + y_disc_loss
             tboard_summary_writer.add_scalar('train/disc_loss', disc_loss.item(), global_step=global_step)
@@ -147,17 +168,59 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
             ###############################################
             # Update buffer of fake x and y domain images #
             ##############################################
-            num_saved_batches = num_historical_examples // batch_size
+            num_saved_batches = num_historical_fake_x_examples // y_batch_size
+            log.debug(f'num_historical_fake_x_examples={num_historical_fake_x_examples}')
+            log.debug(f'y_batch_size={y_batch_size}')
+            log.debug(f'num_historical_fake_y_examples={num_historical_fake_y_examples}')
+            log.debug(f'x_batch_size={x_batch_size}')
+            log.debug(f'num_saved_batches={num_saved_batches}')
+            log.debug(f'max_history_buffer_batches={max_history_buffer_batches}')
             if num_saved_batches < max_history_buffer_batches:
-                torch.cat([fake_x_history, fake_x_batch.detach().to('cpu', non_blocking=True)], dim=0)
-                torch.cat([fake_y_history, fake_y_batch.detach().to('cpu', non_blocking=True)], dim=0)
+                fake_x_history = torch.cat([fake_x_history, fake_x_batch.detach().to('cpu', non_blocking=True)], dim=0)
+                fake_y_history = torch.cat([fake_y_history, fake_y_batch.detach().to('cpu', non_blocking=True)], dim=0)
             elif num_saved_batches >= max_history_buffer_batches:
-                replacement_batch_indices = torch.multinomial(input=torch.ones(num_historical_examples), num_samples=batch_size//2, replacement=False)
+                replacement_batch_x_indices = torch.multinomial(input=torch.ones(num_historical_fake_x_examples),
+                                                                num_samples=y_batch_size//2, replacement=False)
+                replacement_batch_y_indices = torch.multinomial(input=torch.ones(num_historical_fake_y_examples),
+                                                                num_samples=x_batch_size//2, replacement=False)
                 detached_x = fake_x_batch.detach().to('cpu', non_blocking=True)
                 detached_y = fake_y_batch.detach().to('cpu', non_blocking=True)
-                for i, b in enumerate(replacement_batch_indices):
+                for i, b in enumerate(replacement_batch_x_indices):
                     fake_x_history[b] = detached_x[i]
+                for i, b in enumerate(replacement_batch_y_indices):
                     fake_y_history[b] = detached_y[i]
+
+            ############################
+            # Update generator weights #
+            ############################
+            gen_optimizer.zero_grad()
+
+            # These have already been used to optimize the discriminator, and pytorch doesn't like it when you re-use tensors
+            # for two optimizers. So although it's inefficient, we regenerate these.
+            fake_x_batch = y_gen(real_y_batch_on_cuda)
+            fake_y_batch = x_gen(real_x_batch_on_cuda)
+
+            x_adversarial_loss = disc_loss_fn(x_disc(fake_x_batch), real_y_labels)
+            y_adversarial_loss = disc_loss_fn(y_disc(fake_y_batch), real_x_labels)
+            tboard_summary_writer.add_scalar('train/x_adversarial_loss', x_adversarial_loss.item(), global_step=global_step)
+            tboard_summary_writer.add_scalar('train/y_adversarial_loss', y_adversarial_loss.item(), global_step=global_step)
+
+            x_domain_cycle_loss = cycle_loss_fn(
+                real_x_batch_on_cuda,
+                y_gen(fake_y_batch)
+            )
+            y_domain_cycle_loss = cycle_loss_fn(
+                real_y_batch_on_cuda,
+                x_gen(fake_x_batch)
+            )
+            tboard_summary_writer.add_scalar('train/x_domain_cycle_loss', x_domain_cycle_loss.item(), global_step=global_step)
+            tboard_summary_writer.add_scalar('train/y_domain_cycle_loss', y_domain_cycle_loss.item(), global_step=global_step)
+
+            generator_loss = x_adversarial_loss + y_adversarial_loss + lambda_f * x_domain_cycle_loss + lambda_b * y_domain_cycle_loss
+            tboard_summary_writer.add_scalar('train/generator_loss', generator_loss.item(), global_step=global_step)
+
+            generator_loss.backward()
+            gen_optimizer.step()
 
             global_step += 1
 
