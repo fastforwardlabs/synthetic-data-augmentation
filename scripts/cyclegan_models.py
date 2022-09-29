@@ -74,9 +74,12 @@ class GeneratorModel(torch.nn.Module):
             torch.nn.Tanh(),
         )
 
+        self.register_buffer('c_output_offset', torch.tensor([1]))
+        self.register_buffer('c_output_scale', torch.tensor([0.5]))
+
     def forward(self, input):
         log.debug(f'Input shape={input.shape}')
-        return self.model(input)
+        return (self.model(input) + self.c_output_offset) * self.c_output_scale
 
 
 class PatchGANDiscriminator(torch.nn.Module):
