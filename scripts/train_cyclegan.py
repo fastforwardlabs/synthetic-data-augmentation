@@ -243,7 +243,8 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
 
 
 def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.Module, y_disc: torch.nn.Module,
-                x_domain: torch.utils.data.DataLoader, y_domain: torch.utils.data.DataLoader, n_epochs=10):
+                x_domain: torch.utils.data.DataLoader, y_domain: torch.utils.data.DataLoader,
+                n_epochs: int = 10, model_save_base_path: str = 'models'):
     """
     Jointly trains 4 networks (2 generators and 2 discriminators) that are cyclically
     linked to learn conditional mappings from an x domain to a y domain of images.
@@ -255,6 +256,8 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
     :param x_domain: DataLoader yielding training images in the x domain.
     :param y_domain: DataLoader yielding training images in the y domain.
     """
+
+    os.makedirs(model_save_base_path, exist_ok=True)
 
     disc_optimizer = torch.optim.Adam(itertools.chain(x_disc.parameters(), y_disc.parameters()), lr=0.0002)
     disc_constant_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(disc_optimizer, lr_lambda=lambda x: 1)
@@ -289,5 +292,10 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
         gen_scheduler.step()
         tboard_summary_writer.add_scalar('train/disc_scheduler_lr', disc_scheduler.get_last_lr()[0], global_step=global_step)
         tboard_summary_writer.add_scalar('train/gen_scheduler_lr', gen_scheduler.get_last_lr()[0], global_step=global_step)
+
+        torch.save(x_gen.state_dict(), os.path.join(model_save_base_path, f'x_gen.{epoch_num}.pth'))
+        torch.save(x_disc.state_dict(), os.path.join(model_save_base_path, f'x_disc.{epoch_num}.pth'))
+        torch.save(y_gen.state_dict(), os.path.join(model_save_base_path, f'y_gen.{epoch_num}.pth'))
+        torch.save(y_disc.state_dict(), os.path.join(model_save_base_path, f'y_disc.{epoch_num}.pth'))
 
     return x_gen, x_disc, y_gen, y_disc
