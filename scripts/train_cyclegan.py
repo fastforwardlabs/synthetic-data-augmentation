@@ -20,7 +20,7 @@ log = logging.getLogger()
 
 
 class ImageWindowDataset(torch.utils.data.Dataset):
-    def __init__(self, window_df: pd.DataFrame, image_dir, defect_classes=None, num_samples=None, random_state=42, device=None):
+    def __init__(self, window_df: pd.DataFrame, image_dir, defect_classes=None, num_samples=None, random_state=42, device=None, read_mode=None):
         if not device:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         log.info(f'Using device: {device}')
@@ -34,6 +34,12 @@ class ImageWindowDataset(torch.utils.data.Dataset):
             log.info(f'Taking {num_samples} samples')
             window_df = window_df.sample(n=num_samples, random_state=random_state)
 
+        if read_mode and read_mode.lower() == 'gray':
+            self.read_mode = torchvision.io.ImageReadMode.GRAY
+        else:
+            self.read_mode = torchvision.io.ImageReadMode.UNCHANGED
+        log.info(f'Read mode is {self.read_mode}')
+
         self.window_df = window_df
         self.image_dir = image_dir
         self.converter = torchvision.transforms.ConvertImageDtype(torch.float32)
@@ -41,7 +47,7 @@ class ImageWindowDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, n):
         row = self.window_df.iloc[n, :]
-        img = torchvision.io.read_image(os.path.join(self.image_dir, row.ImageId), torchvision.io.ImageReadMode.GRAY)
+        img = torchvision.io.read_image(os.path.join(self.image_dir, row.ImageId), self.read_mode)
         hw = row.window_size // 2
         extra = row.window_size % 2
         x_min, x_max = int(row.instance_center_x - hw), int(row.instance_center_x + hw + extra)
@@ -369,6 +375,12 @@ if __name__ == '__main__':
         default=os.path.join(module_base, 'data', 'undefective_windows.csv'),
         help='File to specify subregions of images to use for the y domain.'
     )
+    parser.add_argument(
+        '--read_grayscale',
+        action='store_true',
+        default=False,
+        help='Used to force reading in grayscale mode for images. Leave unset to read unchanged.',
+    )
 
     args = parser.parse_args()
     log.setLevel(args.log_level)
@@ -381,12 +393,16 @@ if __name__ == '__main__':
     log.info(f'Module base: {module_base}')
     log.info(f'Received args: {args}')
 
+    read_mode = None
+    if args.read_grayscale:
+        read_mode = 'gray'
+
     df = pd.read_csv(args.x_windows, index_col=0)
-    defective_images = ImageWindowDataset(df, defect_classes=args.x_class, image_dir=args.x_image_base)
+    defective_images = ImageWindowDataset(df, defect_classes=args.x_class, image_dir=args.x_image_base, read_mode=read_mode)
     log.info(f'Length of x domain dataset: {len(defective_images)}')
 
     df = pd.read_csv(args.y_windows, index_col=0)
-    undefective_images = ImageWindowDataset(df, image_dir=args.y_image_base)
+    undefective_images = ImageWindowDataset(df, image_dir=args.y_image_base, read_mode=read_mode)
     log.info(f'Length of y domain dataset: {len(undefective_images)}')
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -399,6 +415,7 @@ if __name__ == '__main__':
 
     num_x_channels = defective_images[0].shape[0]
     num_y_channels = defective_images[0].shape[0]
+    log.info(f'X channels: {num_x_channels}, Y channels: {num_y_channels}')
     assert num_x_channels == num_y_channels, f'Image domains have different numbers of channels, which is not yet supported.' \
                                              f' (xch={num_x_channels}, ych={num_y_channels})'
 
