@@ -8,9 +8,12 @@ import torchvision
 import logging
 import os
 import itertools
-
+import numpy as np
+import argparse
 
 from torch.utils.tensorboard import SummaryWriter
+
+from cyclegan_models import GeneratorModel, PatchGANDiscriminator
 
 
 logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
@@ -244,6 +247,7 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
 
 def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.Module, y_disc: torch.nn.Module,
                 x_domain: torch.utils.data.DataLoader, y_domain: torch.utils.data.DataLoader,
+                tboard_summary_writer: torch.utils.tensorboard.SummaryWriter,
                 n_epochs: int = 10, model_save_base_path: str = 'models'):
     """
     Jointly trains 4 networks (2 generators and 2 discriminators) that are cyclically
@@ -276,7 +280,6 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
     fake_x_history = None  # A buffer to hold the history of fake x images.
     fake_y_history = None  # A buffer to hold the history of fake x images.
 
-    tboard_summary_writer = SummaryWriter()
     global_step = 0
     for epoch_num in range(n_epochs):
 
@@ -299,3 +302,74 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
         torch.save(y_disc.state_dict(), os.path.join(model_save_base_path, f'y_disc.{epoch_num}.pth'))
 
     return x_gen, x_disc, y_gen, y_disc
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        '--num_epochs',
+        type=int,
+        default=5,
+        help='Number of epochs to run training.',
+    )
+    parser.add_argument(
+        '--log_level',
+        type=str,
+        default='INFO',
+        help='Python logging module log level to use.',
+    )
+    parser.add_argument(
+        '--model_save_dir',
+        type=str,
+        default='models',
+        help='Directory to save learned models.'
+    )
+    parser.add_argument(
+        '--tboard_log_dir',
+        type=str,
+        default=None,
+        help='Directory to save tensorboard logs.'
+    )
+
+    args = parser.parse_args()
+    log.setLevel(args.log_level)
+
+    module_base = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+    log.info(f'Module base: {module_base}')
+    log.info(f'Received args: {args}')
+
+    df = pd.read_csv(os.path.join(module_base, 'data', 'windows.csv'), index_col=0)
+    defective_images = ImageWindowDataset(df, defect_classes=[3], image_dir=os.path.join(module_base, 'data', 'train_images'))
+    log.info(f'Length of defective image dataset: {len(defective_images)}')
+
+    df = pd.read_csv(os.path.join(module_base, 'data', 'undefective_windows.csv'), index_col=0)
+    undefective_images = ImageWindowDataset(df, image_dir=os.path.join(module_base, 'data', 'train_images'))
+    log.info(f'Length of defective image dataset: {len(undefective_images)}')
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    log.info(f'Using device {device}')
+
+    num_batches = 100
+    x_batch_size = int(np.ceil(len(defective_images) / num_batches))
+    y_batch_size = int(np.ceil(len(undefective_images) / num_batches))
+    log.info(f'Batch sizes: x_batch_size={x_batch_size} and y_batch_size={y_batch_size}')
+
+    num_x_channels = defective_images[0].shape[0]
+    num_y_channels = defective_images[0].shape[0]
+    assert num_x_channels == num_y_channels, f'Image domains have different numbers of channels, which is not yet supported.' \
+                                             f' (xch={num_x_channels}, ych={num_y_channels})'
+
+    x_disc = PatchGANDiscriminator(cin=num_x_channels).to(device)
+    x_gen = GeneratorModel(cin=num_x_channels).to(device)
+    x_domain = torch.utils.data.DataLoader(defective_images, batch_size=x_batch_size, pin_memory=True, shuffle=True)
+
+    y_disc = PatchGANDiscriminator(cin=num_y_channels).to(device)
+    y_gen = GeneratorModel(cin=num_y_channels).to(device)
+    y_domain = torch.utils.data.DataLoader(undefective_images, batch_size=y_batch_size, pin_memory=True, shuffle=True)
+
+    tboard_summary_writer = SummaryWriter(log_dir=args.tboard_log_dir)
+
+    train_model(x_gen, x_disc, y_gen, y_disc, x_domain, y_domain,
+                tboard_summary_writer=tboard_summary_writer,
+                n_epochs=args.num_epochs, model_save_base_path=args.model_save_dir)
