@@ -83,17 +83,31 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
 
     disc_loss_fn = torch.nn.MSELoss()
     cycle_loss_fn = torch.nn.L1Loss()
+
     disc_optimizer = torch.optim.Adam(itertools.chain(x_disc.parameters(), y_disc.parameters()), lr=0.0002)
+    disc_constant_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(disc_optimizer, lr_lambda=lambda x: 1)
+    disc_linear_scheduler = torch.optim.lr_scheduler.LinearLR(disc_optimizer, start_factor=1, end_factor=0, total_iters=100)
+    # Scheduler switches from no decay to linear decay at epoch 100
+    disc_scheduler = torch.optim.lr_scheduler.SequentialLR(disc_optimizer, schedulers=[disc_constant_scheduler, disc_linear_scheduler],
+                                                           milestones=[100])
+
     gen_optimizer = torch.optim.Adam(itertools.chain(y_gen.parameters(), x_gen.parameters()), lr=0.0002)
+    gen_constant_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(gen_optimizer, lr_lambda=lambda x: 1)
+    gen_linear_scheduler = torch.optim.lr_scheduler.LinearLR(gen_optimizer, start_factor=1, end_factor=0, total_iters=100)
+    # Scheduler switches from no decay to linear decay at epoch 100
+    gen_scheduler = torch.optim.lr_scheduler.SequentialLR(gen_optimizer, schedulers=[gen_constant_scheduler, gen_linear_scheduler],
+                                                          milestones=[100])
+
     fake_x_history = None  # A buffer to hold the history of fake x images.
     fake_y_history = None  # A buffer to hold the history of fake x images.
     max_history_buffer_batches = 10
+
     tboard_summary_writer = SummaryWriter()
     global_step = 0
     lambda_f = lambda_b = 10
     for epoch_num in range(n_epochs):
-        for i, (real_x_batch, real_y_batch) in enumerate(zip(x_domain, y_domain)):
-            log.debug(f'epoch={epoch_num}, batch={i}')
+        for batch_num, (real_x_batch, real_y_batch) in enumerate(zip(x_domain, y_domain)):
+            log.debug(f'epoch={epoch_num}, batch={batch_num}')
 
             x_batch_size = real_x_batch.shape[0]
             y_batch_size = real_y_batch.shape[0]
@@ -223,5 +237,10 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
             gen_optimizer.step()
 
             global_step += 1
+
+        disc_scheduler.step()
+        gen_scheduler.step()
+        tboard_summary_writer.add_scalar('train/disc_scheduler_lr', disc_scheduler.get_last_lr()[0], global_step=global_step)
+        tboard_summary_writer.add_scalar('train/gen_scheduler_lr', gen_scheduler.get_last_lr()[0], global_step=global_step)
 
     return x_gen, x_disc, y_gen, y_disc
