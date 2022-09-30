@@ -304,6 +304,15 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
 
 
 if __name__ == '__main__':
+    try:
+        module_base = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        script_path = os.path.join(module_base, 'scripts')
+    except NameError:
+        # __file__ not defined
+        # On CDSW be sure to set this environment variable to point to the dir containing the project scripts
+        script_path = os.environ['SCRIPTS_PATH']
+        module_base = os.path.dirname(script_path)
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         '--num_epochs',
@@ -329,18 +338,40 @@ if __name__ == '__main__':
         default=None,
         help='Directory to save tensorboard logs.'
     )
+    parser.add_argument(
+        '--x_class',
+        type=int,
+        action='append',
+        default=None,
+        help='Specify defect classes for the x domain. Leave blank to use all.'
+   )
+    parser.add_argument(
+        '--x_image_base',
+        type=str,
+        default=os.path.join(module_base, 'data', 'train_images'),
+        help='The base image path for the x domain, to which the ClassId will be appended to form the path to the image.'
+    )
+    parser.add_argument(
+        '--y_image_base',
+        type=str,
+        default=os.path.join(module_base, 'data', 'train_images'),
+        help='The base image path for the y domain, to which the ClassId will be appended to form the path to the image.'
+    )
+    parser.add_argument(
+        '--x_windows',
+        type=str,
+        default=os.path.join(module_base, 'data', 'windows.csv'),
+        help='File to specify subregions of images to use for the x domain.'
+    )
+    parser.add_argument(
+        '--y_windows',
+        type=str,
+        default=os.path.join(module_base, 'data', 'undefective_windows.csv'),
+        help='File to specify subregions of images to use for the y domain.'
+    )
 
     args = parser.parse_args()
     log.setLevel(args.log_level)
-
-    try:
-        module_base = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        script_path = os.path.join(module_base, 'scripts')
-    except NameError:
-        # __file__ not defined
-        # On CDSW be sure to set this environment variable to point to the dir containing the project scripts
-        script_path = os.environ['SCRIPTS_PATH']
-        module_base = os.path.dirname(script_path)
 
     if script_path not in sys.path:
         sys.path.append(script_path)
@@ -350,13 +381,13 @@ if __name__ == '__main__':
     log.info(f'Module base: {module_base}')
     log.info(f'Received args: {args}')
 
-    df = pd.read_csv(os.path.join(module_base, 'data', 'windows.csv'), index_col=0)
-    defective_images = ImageWindowDataset(df, defect_classes=[3], image_dir=os.path.join(module_base, 'data', 'train_images'))
-    log.info(f'Length of defective image dataset: {len(defective_images)}')
+    df = pd.read_csv(args.x_windows, index_col=0)
+    defective_images = ImageWindowDataset(df, defect_classes=args.x_class, image_dir=args.x_image_base)
+    log.info(f'Length of x domain dataset: {len(defective_images)}')
 
-    df = pd.read_csv(os.path.join(module_base, 'data', 'undefective_windows.csv'), index_col=0)
-    undefective_images = ImageWindowDataset(df, image_dir=os.path.join(module_base, 'data', 'train_images'))
-    log.info(f'Length of defective image dataset: {len(undefective_images)}')
+    df = pd.read_csv(args.y_windows, index_col=0)
+    undefective_images = ImageWindowDataset(df, image_dir=args.y_image_base)
+    log.info(f'Length of y domain dataset: {len(undefective_images)}')
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     log.info(f'Using device {device}')
