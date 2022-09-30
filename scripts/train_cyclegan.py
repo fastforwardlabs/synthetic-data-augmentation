@@ -60,6 +60,23 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
     """
     Executes one training step.
 
+    During each training step we will:
+
+         1. Minimize a "least squares loss" w.r.t. both discriminators' weights.
+            For x_disc, this loss L := E[ (D_x(x) - 1)^2 ] + E[ D_x(G_y(y))^2 ]
+            Where D_x is x_disc, and G_y is y_gen, and E[ ] indicates the expected
+            value over a batch. y_disc is optimized analogously.
+            (This loss is minimized when all "real" images in the x domain are
+             assigned value 1, and when all "fake" images conditionally generated
+             on images in the y domain are assigned value 0.)
+
+         2. Minimize another "least squares loss" w.r.t both generators' weights.
+             L := E[ D_y(G_x(x)) ] + E[ D_x(G_y(y)) ] + lambda_f * E[ L1( G_y(G_x(x)) - x ) ] + lambda_b * E[ L1( G_x(G_y(y)) - y ) ]
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^^^^
+                          Adversarial Losses                      Forward cycle consistency loss         Backward cycle consistency loss
+            Where the same notation for D_x, D_y, G_x, and G_y hold, and the cycle consistency losses are weighted
+            with hyperparameters lambda_f and lambda_b.
+
     :param x_gen:
     :param x_disc:
     :param y_gen:
@@ -238,23 +255,6 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
     :param x_domain: DataLoader yielding training images in the x domain.
     :param y_domain: DataLoader yielding training images in the y domain.
     """
-
-    #  During each training step we will:
-    #
-    #       1. Minimize a "least squares loss" w.r.t. both discriminators' weights.
-    #          For x_disc, this loss L := E[ (D_x(x) - 1)^2 ] + E[ D_x(G_y(y))^2 ]
-    #          Where D_x is x_disc, and G_y is y_gen, and E[ ] indicates the expected
-    #          value over a batch. y_disc is optimized analogously.
-    #          (This loss is minimized when all "real" images in the x domain are
-    #           assigned value 1, and when all "fake" images conditionally generated
-    #           on images in the y domain are assigned value 0.)
-    #
-    #       2. Minimize another "least squares loss" w.r.t both generators' weights.
-    #          For x_gen, this loss L := E[ D_y(G_x(x)) ] + lambda_f * E[ L1( G_y(G_x(x)) - x ) ] + lambda_b * E[ L1( G_x(G_y(y)) - y ) ]
-    #                                    ^^^^^^^^^^^^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^^^^              ^^^^^^^^^^^^^^^^^^^^^^^^^^
-    #                                    Adversarial Loss             Forward cycle consistency loss         Backward cycle consistency loss
-    #          Where the same notation for D_x, D_y, G_x, and G_y hold, and the cycle consistency losses are weighted
-    #          with hyperparameters lambda_f and lambda_b, and we use an analogous loss term for y_gen.
 
     disc_optimizer = torch.optim.Adam(itertools.chain(x_disc.parameters(), y_disc.parameters()), lr=0.0002)
     disc_constant_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(disc_optimizer, lr_lambda=lambda x: 1)
