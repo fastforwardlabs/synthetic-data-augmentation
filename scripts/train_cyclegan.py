@@ -214,6 +214,17 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
             fake_x_batch = y_gen(real_y_batch_on_cuda)
             fake_y_batch = x_gen(real_x_batch_on_cuda)
 
+            if batch_num % 50 == 0:
+                tboard_summary_writer.add_image('train/images/real_x', real_x_batch[0], global_step=global_step)
+                tboard_summary_writer.add_image('train/images/fake_x', fake_x_batch[0], global_step=global_step)
+                tboard_summary_writer.add_image('train/images/real_y', real_y_batch[0], global_step=global_step)
+                tboard_summary_writer.add_image('train/images/fake_y', fake_y_batch[0], global_step=global_step)
+                with torch.no_grad():
+                    recovered_x = y_gen(fake_y_batch)[0]
+                    tboard_summary_writer.add_image('train/images/recovered_x', recovered_x, global_step=global_step)
+                    recovered_y = x_gen(fake_x_batch)[0]
+                    tboard_summary_writer.add_image('train/images/recovered_y', recovered_y, global_step=global_step)
+
             x_adversarial_loss = disc_loss_fn(x_disc(fake_x_batch), real_y_labels)
             y_adversarial_loss = disc_loss_fn(y_disc(fake_y_batch), real_x_labels)
             tboard_summary_writer.add_scalar('train/x_adversarial_loss', x_adversarial_loss.item(), global_step=global_step)
