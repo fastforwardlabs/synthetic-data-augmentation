@@ -10,10 +10,9 @@ import os
 import itertools
 import numpy as np
 import argparse
+import sys
 
 from torch.utils.tensorboard import SummaryWriter
-
-from cyclegan_models import GeneratorModel, PatchGANDiscriminator
 
 
 logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
@@ -334,7 +333,19 @@ if __name__ == '__main__':
     args = parser.parse_args()
     log.setLevel(args.log_level)
 
-    module_base = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    try:
+        module_base = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        script_path = os.path.join(module_base, 'scripts')
+    except NameError:
+        # __file__ not defined
+        # On CDSW be sure to set this environment variable to point to the dir containing the project scripts
+        script_path = os.environ['SCRIPTS_PATH']
+        module_base = os.path.dirname(script_path)
+
+    if script_path not in sys.path:
+        sys.path.append(script_path)
+
+    from cyclegan_models import GeneratorModel, PatchGANDiscriminator
 
     log.info(f'Module base: {module_base}')
     log.info(f'Received args: {args}')
