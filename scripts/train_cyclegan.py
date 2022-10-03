@@ -381,6 +381,30 @@ if __name__ == '__main__':
         default=False,
         help='Used to force reading in grayscale mode for images. Leave unset to read unchanged.',
     )
+    parser.add_argument(
+        '--x_disc_model',
+        type=str,
+        default=None,
+        help='PatchGANDiscriminator model weights for x domain to be loaded from disk.',
+    )
+    parser.add_argument(
+        '--y_disc_model',
+        type=str,
+        default=None,
+        help='PatchGANDiscriminator model weights for y domain to be loaded from disk.',
+    )
+    parser.add_argument(
+        '--x_gen_model',
+        type=str,
+        default=None,
+        help='GeneratorModel model weights for x domain to be loaded from disk.',
+    )
+    parser.add_argument(
+        '--y_gen_model',
+        type=str,
+        default=None,
+        help='GeneratorModel model weights for y domain to be loaded from disk.',
+    )
 
     args = parser.parse_args()
     log.setLevel(args.log_level)
@@ -420,11 +444,27 @@ if __name__ == '__main__':
                                              f' (xch={num_x_channels}, ych={num_y_channels})'
 
     x_disc = PatchGANDiscriminator(cin=num_x_channels).to(device)
+    if args.x_disc_model:
+        log.info(f'Loading x_disc_model from {args.x_disc_model}')
+        x_disc.load_state_dict(torch.load(args.x_disc_model))
+
     x_gen = GeneratorModel(cin=num_x_channels).to(device)
+    if args.x_gen_model:
+        log.info(f'Loading x_gen_model from {args.x_gen_model}')
+        x_gen.load_state_dict(torch.load(args.x_gen_model))
+
     x_domain = torch.utils.data.DataLoader(defective_images, batch_size=x_batch_size, pin_memory=True, shuffle=True)
 
     y_disc = PatchGANDiscriminator(cin=num_y_channels).to(device)
+    if args.y_disc_model:
+        log.info(f'Loading y_disc_model from {args.y_disc_model}')
+        y_disc.load_state_dict(torch.load(args.y_disc_model))
+
     y_gen = GeneratorModel(cin=num_y_channels).to(device)
+    if args.y_gen_model:
+        log.info(f'Loading y_gen_model from {args.y_gen_model}')
+        y_gen.load_state_dict(torch.load(args.y_gen_model))
+
     y_domain = torch.utils.data.DataLoader(undefective_images, batch_size=y_batch_size, pin_memory=True, shuffle=True)
 
     tboard_summary_writer = SummaryWriter(log_dir=args.tboard_log_dir)
