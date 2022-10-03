@@ -10,6 +10,9 @@ import logging
 import argparse
 import os
 import multiprocessing
+import tqdm
+
+from dataset_utils import has_blank_space
 
 
 logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
@@ -142,18 +145,6 @@ def overlaps_edge(row, img_width=1600):
     return (min_x < 0) or (max_x > img_width)
 
 
-def has_blank_space(img, tol=25):
-    """
-    The heuristic for detecting blank space is if one of the image columns is close to zero.
-    If the mean of all pixel vals is less than tol, we say it's close to zero.
-
-    :param img: A grayscale image with the x-dimension in the first index.
-    :param tol: A column's mean pixel values should be below this level.
-    :return:
-    """
-    return np.any([np.mean(col) < tol for col in img])
-
-
 class InstanceDataset(torch.utils.data.Dataset):
     def __init__(self, train_df, defect_classes=(1, 3)):
         num_classes_by_image = train_df.groupby(by='ImageId').size()
@@ -193,7 +184,7 @@ class RegularizationDataset(torch.utils.data.IterableDataset):
         size_quantiles = instances_df.instance_size.quantile(quantile_levels)
         log.info(f'Instance size quantiles (quantile_levels={quantile_levels}): {size_quantiles.values}')
         if not window_size:
-            window_size = size_quantiles.loc[.90]
+            window_size = int(np.ceil(size_quantiles.loc[.90]))
 
         log.info(f'Using window_size={window_size}')
         instances_df['window_size'] = window_size
@@ -217,6 +208,9 @@ class RegularizationDataset(torch.utils.data.IterableDataset):
     def image_generator(self, start, end):
         indices = self.instances_df.index[start:end]
         my_instances = self.instances_df.loc[indices, :].copy()
+
+        if my_instances.empty:
+            return
 
         log.debug(f'For worker {torch.utils.data.get_worker_info().id}, '
                   f'Getting overlapping instances with window_size={self.window_size}')
@@ -352,14 +346,29 @@ if __name__ == "__main__":
             prefetch_factor=2,
         )
         log.info('Identifying instances...')
-        data = list(loader)
+        # Implementing ad-hoc custom batching, since elements returned from this dataset have variable length, and are
+        # thus not supported by the default batch scheme.
+        BATCH_SIZE = 256
+        instance_df = pd.DataFrame()
+        it = iter(tqdm.tqdm(loader))
+        try:
+            batch = []
+            while True:
+                for _ in range(BATCH_SIZE):
+                    batch += next(it)
+                log.debug(f'Batch has length {len(batch)}')
+                # Here we unwrap the tensors in the normalization fn, so that shared memory can be freed
+                tmp = normalize_df_cols(pd.DataFrame(data=batch))
+                instance_df = pd.concat([instance_df, tmp], ignore_index=True)
+                batch = []
+        except StopIteration:
+            # Get the results of the last partial batch
+            log.debug(f'Last batch had length {len(batch)}')
+            tmp = normalize_df_cols(pd.DataFrame(data=batch))
+            instance_df = pd.concat([instance_df, tmp], ignore_index=True)
         log.info('Completed instance identification.')
 
-        flat_data = [i for instances in data for i in instances]
-        instance_df = pd.DataFrame(data=flat_data)
         log.info(f'Writing output to {args.instance_file}')
-
-        instance_df = normalize_df_cols(instance_df)
         instance_df.to_csv(args.instance_file)
 
     if args.window_generation:
@@ -377,25 +386,26 @@ if __name__ == "__main__":
         dataset = RegularizationDataset(instance_df, image_dir, yield_images=yield_images)
         loader = torch.utils.data.DataLoader(
             dataset,
-            batch_size=None,  # Implies that yielded image tensors will be 3-dimensional (CHW) and not 4-dimensional
+            batch_size=256,  # Implies that yielded image tensors will be 4-dimensional (NCHW)
             num_workers=multiprocessing.cpu_count() - 1,
             prefetch_factor=2,
         )
         log.info('Generating regularized windows...')
-        rows = list(loader)
+        if yield_images:
+            log.info(f'Dumping images to {args.dump_dir}')
+            os.makedirs(args.dump_dir, exist_ok=True)
+        windows_df = pd.DataFrame()
+        for batch in tqdm.tqdm(loader):
+            if yield_images:
+                for idx, img in zip(batch['Index'], batch['img']):  # It's batched, so iterate over the first dimension
+                    torchvision.io.write_png(img, os.path.join(args.dump_dir, str(idx.item()) + '.png'))
+                del batch['img']
+            # Why doesn't this dataframe need to be normalized? It's a pytorch mystery
+            windows_df = pd.concat([windows_df, pd.DataFrame(data=batch)], ignore_index=True)
         log.info('Completed generating regularized windows.')
-
-        windows_df = pd.DataFrame(data=rows)  # Why doesn't this dataframe need to be normalized? It's a pytorch mystery
 
         log.info(f'Writing output to {args.window_file}')
         keep_cols = [col for col in windows_df if col != 'img']
         windows_df.loc[:, keep_cols].to_csv(args.window_file)
 
-        if yield_images:
-            log.info(f'Dumping images to {args.dump_dir}')
-            os.makedirs(args.dump_dir, exist_ok=True)
-            windows_df.apply(lambda row: torchvision.io.write_png(
-                row.img,
-                os.path.join(args.dump_dir, str(row.Index) + '.png')
-            ), axis=1)
 
