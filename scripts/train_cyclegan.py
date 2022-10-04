@@ -42,7 +42,27 @@ class ImageWindowDataset(torch.utils.data.Dataset):
 
         self.window_df = window_df
         self.image_dir = image_dir
-        self.converter = torchvision.transforms.ConvertImageDtype(torch.float32)
+
+        test_row = self.window_df.iloc[0, :]
+        test_img = torchvision.io.read_image(os.path.join(self.image_dir, test_row.ImageId), self.read_mode)
+        hw = test_row.window_size // 2
+        extra = test_row.window_size % 2
+        x_min, x_max = int(test_row.instance_center_x - hw), int(test_row.instance_center_x + hw + extra)
+        test_img = test_img[..., x_min:x_max]
+
+        log.info(f'Image shapes: {test_img.shape}')
+        n_channels = test_img.shape[0]
+        means = stds = (0.5,) * n_channels
+        embiggened_size = tuple(int(s * 1.12) for s in test_img.shape[1:])
+        log.info(f'Embiggened size: {embiggened_size}')
+
+        self.preprocess = torchvision.transforms.Compose([
+            torchvision.transforms.Resize(embiggened_size, torchvision.transforms.InterpolationMode.BICUBIC),
+            torchvision.transforms.RandomCrop(test_img.shape[1:]),
+            torchvision.transforms.RandomHorizontalFlip(),
+            torchvision.transforms.ConvertImageDtype(torch.float32),
+            torchvision.transforms.Normalize(mean=means, std=stds),
+        ])
         self.device = device
 
     def __getitem__(self, n):
@@ -52,10 +72,7 @@ class ImageWindowDataset(torch.utils.data.Dataset):
         extra = row.window_size % 2
         x_min, x_max = int(row.instance_center_x - hw), int(row.instance_center_x + hw + extra)
         img = img[..., x_min:x_max]
-        n_channels = img.shape[0]
-        means = stds = (0.5,) * n_channels
-        norm = torchvision.transforms.Normalize(mean=means, std=stds)
-        return norm(self.converter(img))
+        return self.preprocess(img)
 
     def __len__(self):
         return self.window_df.shape[0]
