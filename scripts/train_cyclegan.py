@@ -213,7 +213,7 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
     tboard_summary_writer.add_scalar('train/y_disc_loss/fake', y_fake_loss.item(), global_step=global_step)
     tboard_summary_writer.add_scalar('train/y_disc_loss', y_disc_loss.item(), global_step=global_step)
 
-    disc_loss = x_disc_loss + y_disc_loss
+    disc_loss = (x_disc_loss + y_disc_loss) / 2
     tboard_summary_writer.add_scalar('train/disc_loss', disc_loss.item(), global_step=global_step)
     disc_loss.backward()
     disc_optimizer.step()
