@@ -142,9 +142,9 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
              all of which are mutated by this function
     """
 
-    disc_loss_fn = torch.nn.MSELoss()
-    cycle_loss_fn = torch.nn.L1Loss()
-    identity_loss_fn = torch.nn.L1Loss()
+    disc_loss_fn = torch.nn.MSELoss().to('cuda')
+    cycle_loss_fn = torch.nn.L1Loss().to('cuda')
+    identity_loss_fn = torch.nn.L1Loss().to('cuda')
     lambda_f = lambda_b = 10
 
     x_batch_size = real_x_batch.shape[0]
