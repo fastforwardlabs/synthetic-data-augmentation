@@ -11,6 +11,7 @@ import itertools
 import numpy as np
 import argparse
 import sys
+import ignite
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -334,7 +335,9 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
     fake_y_history = None  # A buffer to hold the history of fake x images.
 
     global_step = 0
+    fid_fn = ignite.metrics.FID(device='cuda')
     for epoch_num in range(n_epochs):
+        fid_fn.reset()
 
         for batch_num, (real_x_batch, real_y_batch) in enumerate(zip(x_domain, y_domain)):
             log.debug(f'epoch={epoch_num}, batch={batch_num}')
@@ -342,12 +345,19 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
             x_gen, x_disc, y_gen, y_disc, disc_optimizer, gen_optimizer, fake_x_history, fake_y_history = \
                 train_step(x_gen, x_disc, y_gen, y_disc, disc_optimizer, gen_optimizer, fake_x_history, fake_y_history,
                            real_x_batch, real_y_batch, tboard_summary_writer, log_images, global_step)
+            real_y_batch_on_cuda = real_y_batch.detach().to('cuda')
+            real_x_batch_on_cuda = real_x_batch.detach().to('cuda')
+            fid_eval_size = min(real_x_batch.shape[0], real_y_batch.shape[0])
+            fid_fn.update((y_gen(real_y_batch_on_cuda[:fid_eval_size]), real_x_batch_on_cuda[:fid_eval_size]))
+            fid_fn.update((y_gen(real_x_batch_on_cuda[:fid_eval_size]), real_y_batch_on_cuda[:fid_eval_size]))
             global_step += 1
 
         disc_scheduler.step()
         gen_scheduler.step()
         tboard_summary_writer.add_scalar('train/disc_scheduler_lr', disc_scheduler.get_last_lr()[0], global_step=global_step)
         tboard_summary_writer.add_scalar('train/gen_scheduler_lr', gen_scheduler.get_last_lr()[0], global_step=global_step)
+
+        tboard_summary_writer.add_scalar('train/fid', fid_fn.compute(), global_step=global_step)
 
         torch.save(x_gen.state_dict(), os.path.join(model_save_base_path, f'x_gen.{epoch_num}.pth'))
         torch.save(x_disc.state_dict(), os.path.join(model_save_base_path, f'x_disc.{epoch_num}.pth'))
