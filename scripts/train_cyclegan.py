@@ -153,17 +153,17 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
     ################################
     disc_optimizer.zero_grad()
 
-    historical_fake_x_indices = torch.multinomial(input=torch.ones(num_historical_fake_x_examples), num_samples=max(y_batch_size // 2, 1),
+    historical_fake_x_indices = torch.multinomial(input=torch.ones(num_historical_fake_x_examples), num_samples=max(x_batch_size // 2, 1),
                                                   replacement=True)
     historical_fake_x_batch = torch.index_select(input=fake_x_history, dim=0, index=historical_fake_x_indices)
-    historical_fake_y_indices = torch.multinomial(input=torch.ones(num_historical_fake_y_examples), num_samples=max(x_batch_size // 2, 1),
+    historical_fake_y_indices = torch.multinomial(input=torch.ones(num_historical_fake_y_examples), num_samples=max(y_batch_size // 2, 1),
                                                   replacement=True)
     historical_fake_y_batch = torch.index_select(input=fake_y_history, dim=0, index=historical_fake_y_indices)
 
-    current_fake_x_indices = torch.multinomial(input=torch.ones(y_batch_size), num_samples=max(y_batch_size // 2, 1), replacement=False).to(
+    current_fake_x_indices = torch.multinomial(input=torch.ones(y_batch_size), num_samples=max(x_batch_size // 2, 1), replacement=True).to(
         'cuda', non_blocking=True)
     current_fake_x_batch = torch.index_select(input=fake_x_batch, dim=0, index=current_fake_x_indices)
-    current_fake_y_indices = torch.multinomial(input=torch.ones(x_batch_size), num_samples=max(x_batch_size // 2, 1), replacement=False).to(
+    current_fake_y_indices = torch.multinomial(input=torch.ones(x_batch_size), num_samples=max(y_batch_size // 2, 1), replacement=True).to(
         'cuda', non_blocking=True)
     current_fake_y_batch = torch.index_select(input=fake_y_batch, dim=0, index=current_fake_y_indices)
 
@@ -175,7 +175,7 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
     log.debug(f'current_fake_y_batch.shape={current_fake_y_batch.shape}')
 
     real_x_labels = torch.ones(x_batch_size, 1, 1, 1).to('cuda', non_blocking=True)
-    fake_x_labels = torch.zeros(max(y_batch_size // 2, 1), 1, 1, 1).to('cuda', non_blocking=True)
+    fake_x_labels = torch.zeros(max(x_batch_size // 2, 1), 1, 1, 1).to('cuda', non_blocking=True)
 
     x_real_loss = disc_loss_fn(x_disc(real_x_batch_on_cuda), real_x_labels)
     x_fake_loss = disc_loss_fn(x_disc(historical_fake_x_batch.to('cuda', non_blocking=True)), fake_x_labels)
@@ -186,7 +186,7 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
     tboard_summary_writer.add_scalar('train/x_disc_loss', x_disc_loss.item(), global_step=global_step)
 
     real_y_labels = torch.ones(y_batch_size, 1, 1, 1).to('cuda', non_blocking=True)
-    fake_y_labels = torch.zeros(max(x_batch_size // 2, 1), 1, 1, 1).to('cuda', non_blocking=True)
+    fake_y_labels = torch.zeros(max(y_batch_size // 2, 1), 1, 1, 1).to('cuda', non_blocking=True)
 
     y_real_loss = disc_loss_fn(y_disc(real_y_batch_on_cuda), real_y_labels)
     y_fake_loss = disc_loss_fn(y_disc(historical_fake_y_batch.to('cuda', non_blocking=True)), fake_y_labels)
@@ -216,14 +216,18 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
         fake_y_history = torch.cat([fake_y_history, fake_y_batch.detach().to('cpu', non_blocking=True)], dim=0)
     elif num_saved_batches >= max_history_buffer_batches:
         replacement_batch_x_indices = torch.multinomial(input=torch.ones(num_historical_fake_x_examples),
-                                                        num_samples=max(y_batch_size // 2, 1), replacement=False)
+                                                        num_samples=max(x_batch_size // 2, 1), replacement=True)
+        fake_x_indices = torch.multinomial(input=torch.ones(fake_x_batch.shape[0]),
+                                           num_samples=max(x_batch_size // 2, 1), replacement=True)
         replacement_batch_y_indices = torch.multinomial(input=torch.ones(num_historical_fake_y_examples),
-                                                        num_samples=max(x_batch_size // 2, 1), replacement=False)
+                                                        num_samples=max(y_batch_size // 2, 1), replacement=True)
+        fake_y_indices = torch.multinomial(input=torch.ones(fake_y_batch.shape[0]),
+                                           num_samples=max(y_batch_size // 2, 1), replacement=True)
         detached_x = fake_x_batch.detach().to('cpu', non_blocking=True)
         detached_y = fake_y_batch.detach().to('cpu', non_blocking=True)
-        for i, b in enumerate(replacement_batch_x_indices):
+        for b, i in zip(replacement_batch_x_indices, fake_x_indices):
             fake_x_history[b] = detached_x[i]
-        for i, b in enumerate(replacement_batch_y_indices):
+        for b, i in zip(replacement_batch_y_indices, fake_y_indices):
             fake_y_history[b] = detached_y[i]
 
     ############################
