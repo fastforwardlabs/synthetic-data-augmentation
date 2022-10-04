@@ -317,14 +317,14 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
 
     os.makedirs(model_save_base_path, exist_ok=True)
 
-    disc_optimizer = torch.optim.Adam(itertools.chain(x_disc.parameters(), y_disc.parameters()), lr=0.0002)
+    disc_optimizer = torch.optim.Adam(itertools.chain(x_disc.parameters(), y_disc.parameters()), lr=0.0002, betas=[0.5, 0.999])
     disc_constant_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(disc_optimizer, lr_lambda=lambda x: 1)
     disc_linear_scheduler = torch.optim.lr_scheduler.LinearLR(disc_optimizer, start_factor=1, end_factor=0, total_iters=100)
     # Scheduler switches from no decay to linear decay at epoch 100
     disc_scheduler = torch.optim.lr_scheduler.SequentialLR(disc_optimizer, schedulers=[disc_constant_scheduler, disc_linear_scheduler],
                                                            milestones=[100])
 
-    gen_optimizer = torch.optim.Adam(itertools.chain(y_gen.parameters(), x_gen.parameters()), lr=0.0002)
+    gen_optimizer = torch.optim.Adam(itertools.chain(y_gen.parameters(), x_gen.parameters()), lr=0.0002, betas=[0.5, 0.999])
     gen_constant_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(gen_optimizer, lr_lambda=lambda x: 1)
     gen_linear_scheduler = torch.optim.lr_scheduler.LinearLR(gen_optimizer, start_factor=1, end_factor=0, total_iters=100)
     # Scheduler switches from no decay to linear decay at epoch 100
