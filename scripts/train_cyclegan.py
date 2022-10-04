@@ -126,6 +126,7 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
 
     disc_loss_fn = torch.nn.MSELoss()
     cycle_loss_fn = torch.nn.L1Loss()
+    identity_loss_fn = torch.nn.L1Loss()
     lambda_f = lambda_b = 10
 
     x_batch_size = real_x_batch.shape[0]
@@ -234,17 +235,16 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
     # for two optimizers. So although it's inefficient, we regenerate these.
     fake_x_batch = y_gen(real_y_batch_on_cuda)
     fake_y_batch = x_gen(real_x_batch_on_cuda)
+    recovered_x = y_gen(fake_y_batch)
+    recovered_y = x_gen(fake_x_batch)
 
     if log_images:
         tboard_summary_writer.add_image('train/images/real_x', denorm_image(real_x_batch[0]), global_step=global_step)
         tboard_summary_writer.add_image('train/images/fake_x', denorm_image(fake_x_batch[0]), global_step=global_step)
         tboard_summary_writer.add_image('train/images/real_y', denorm_image(real_y_batch[0]), global_step=global_step)
         tboard_summary_writer.add_image('train/images/fake_y', denorm_image(fake_y_batch[0]), global_step=global_step)
-        with torch.no_grad():
-            recovered_x = y_gen(fake_y_batch)[0]
-            tboard_summary_writer.add_image('train/images/recovered_x', denorm_image(recovered_x), global_step=global_step)
-            recovered_y = x_gen(fake_x_batch)[0]
-            tboard_summary_writer.add_image('train/images/recovered_y', denorm_image(recovered_y), global_step=global_step)
+        tboard_summary_writer.add_image('train/images/recovered_x', denorm_image(recovered_x[0]), global_step=global_step)
+        tboard_summary_writer.add_image('train/images/recovered_y', denorm_image(recovered_y[0]), global_step=global_step)
 
     x_adversarial_loss = disc_loss_fn(x_disc(fake_x_batch), real_y_labels)
     y_adversarial_loss = disc_loss_fn(y_disc(fake_y_batch), real_x_labels)
@@ -253,16 +253,22 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
 
     x_domain_cycle_loss = cycle_loss_fn(
         real_x_batch_on_cuda,
-        y_gen(fake_y_batch)
+        recovered_x
     )
     y_domain_cycle_loss = cycle_loss_fn(
         real_y_batch_on_cuda,
-        x_gen(fake_x_batch)
+        recovered_y
     )
     tboard_summary_writer.add_scalar('train/x_domain_cycle_loss', x_domain_cycle_loss.item(), global_step=global_step)
     tboard_summary_writer.add_scalar('train/y_domain_cycle_loss', y_domain_cycle_loss.item(), global_step=global_step)
 
-    generator_loss = x_adversarial_loss + y_adversarial_loss + lambda_f * x_domain_cycle_loss + lambda_b * y_domain_cycle_loss
+    identity_loss_x = identity_loss_fn(x_gen(real_y_batch_on_cuda), real_y_batch_on_cuda) * lambda_f / 2
+    identity_loss_y = identity_loss_fn(y_gen(real_x_batch_on_cuda), real_x_batch_on_cuda) * lambda_b / 2
+    tboard_summary_writer.add_scalar('train/identity_loss_x', identity_loss_x.item(), global_step=global_step)
+    tboard_summary_writer.add_scalar('train/identity_loss_y', identity_loss_y.item(), global_step=global_step)
+
+    generator_loss = x_adversarial_loss + y_adversarial_loss + lambda_f * x_domain_cycle_loss + lambda_b * y_domain_cycle_loss + \
+                     identity_loss_x + identity_loss_y
     tboard_summary_writer.add_scalar('train/generator_loss', generator_loss.item(), global_step=global_step)
 
     generator_loss.backward()
