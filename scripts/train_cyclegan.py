@@ -470,15 +470,24 @@ if __name__ == '__main__':
     assert num_x_channels == num_y_channels, f'Image domains have different numbers of channels, which is not yet supported.' \
                                              f' (xch={num_x_channels}, ych={num_y_channels})'
 
+    def init_weights(module: torch.nn.Module):
+        if type(module) == torch.nn.Conv2d:
+            log.info(f'Initializing conv weights')
+            torch.nn.init.normal_(module.weight, mean=0, std=.02)
+
     x_disc = PatchGANDiscriminator(cin=num_x_channels).to(device)
     if args.x_disc_model:
         log.info(f'Loading x_disc_model from {args.x_disc_model}')
         x_disc.load_state_dict(torch.load(args.x_disc_model))
+    else:
+        x_disc.apply(init_weights)
 
     x_gen = GeneratorModel(cin=num_x_channels).to(device)
     if args.x_gen_model:
         log.info(f'Loading x_gen_model from {args.x_gen_model}')
         x_gen.load_state_dict(torch.load(args.x_gen_model))
+    else:
+        x_gen.apply(init_weights)
 
     x_domain = torch.utils.data.DataLoader(defective_images, batch_size=x_batch_size, pin_memory=True, shuffle=True)
 
@@ -486,11 +495,15 @@ if __name__ == '__main__':
     if args.y_disc_model:
         log.info(f'Loading y_disc_model from {args.y_disc_model}')
         y_disc.load_state_dict(torch.load(args.y_disc_model))
+    else:
+        y_disc.apply(init_weights)
 
     y_gen = GeneratorModel(cin=num_y_channels).to(device)
     if args.y_gen_model:
         log.info(f'Loading y_gen_model from {args.y_gen_model}')
         y_gen.load_state_dict(torch.load(args.y_gen_model))
+    else:
+        y_gen.apply(init_weights)
 
     y_domain = torch.utils.data.DataLoader(undefective_images, batch_size=y_batch_size, pin_memory=True, shuffle=True)
 
