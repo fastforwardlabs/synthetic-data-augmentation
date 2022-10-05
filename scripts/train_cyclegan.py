@@ -352,8 +352,15 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
             real_y_batch_on_cuda = real_y_batch.detach().to('cuda')
             real_x_batch_on_cuda = real_x_batch.detach().to('cuda')
             fid_eval_size = min(real_x_batch.shape[0], real_y_batch.shape[0])
-            fid_fn.update((y_gen(real_y_batch_on_cuda[:fid_eval_size]), real_x_batch_on_cuda[:fid_eval_size]))
-            fid_fn.update((y_gen(real_x_batch_on_cuda[:fid_eval_size]), real_y_batch_on_cuda[:fid_eval_size]))
+            # FID requires 3-channel tensors, so in case of grayscale be sure to expand. For 3-channel tensors this is noop.
+            fid_fn.update((
+                y_gen(real_y_batch_on_cuda[:fid_eval_size]).expand(-1, 3, -1, -1),
+                real_x_batch_on_cuda[:fid_eval_size].expand(-1, 3, -1, -1),
+            ))
+            fid_fn.update((
+                y_gen(real_x_batch_on_cuda[:fid_eval_size]).expand(-1, 3, -1, -1),
+                real_y_batch_on_cuda[:fid_eval_size].expand(-1, 3, -1, -1),
+            ))
             global_step += 1
 
         disc_scheduler.step()
