@@ -478,6 +478,21 @@ if __name__ == '__main__':
         default=None,
         help='GeneratorModel model weights for y domain to be loaded from disk.',
     )
+    parser.add_argument(
+        '--num_dataloader_threads_per_dataset',
+        type=int,
+        default=0,
+        help='Number of threads to use for torch.utils.data.DataLoader per dataset'
+             ' (this amount will be used for x and y domains).'
+    )
+    parser.add_argument(
+        '--num_batches',
+        type=int,
+        default=100,
+        help='Number of batches per epoch. Determines the batch size. '
+             'Set higher if there is not enough memory on host or device.'
+    )
+
 
     args = parser.parse_args()
     log.setLevel(args.log_level)
@@ -505,9 +520,9 @@ if __name__ == '__main__':
     device = "cuda" if torch.cuda.is_available() else "cpu"
     log.info(f'Using device {device}')
 
-    num_batches = 100
-    x_batch_size = int(np.ceil(len(defective_images) / num_batches))
-    y_batch_size = int(np.ceil(len(undefective_images) / num_batches))
+    num_batches = args.num_batches
+    x_batch_size = int(len(defective_images) / num_batches)
+    y_batch_size = int(len(undefective_images) / num_batches)
     log.info(f'Batch sizes: x_batch_size={x_batch_size} and y_batch_size={y_batch_size}')
 
     num_x_channels = defective_images[0].shape[0]
@@ -535,7 +550,8 @@ if __name__ == '__main__':
     else:
         x_gen.apply(init_weights)
 
-    x_domain = torch.utils.data.DataLoader(defective_images, batch_size=x_batch_size, pin_memory=True, shuffle=True, num_workers=2)
+    x_domain = torch.utils.data.DataLoader(defective_images, batch_size=x_batch_size, pin_memory=True, shuffle=True,
+                                           num_workers=args.num_dataloader_threads_per_dataset)
 
     y_disc = PatchGANDiscriminator(cin=num_y_channels).to(device)
     if args.y_disc_model:
@@ -551,7 +567,8 @@ if __name__ == '__main__':
     else:
         y_gen.apply(init_weights)
 
-    y_domain = torch.utils.data.DataLoader(undefective_images, batch_size=y_batch_size, pin_memory=True, shuffle=True, num_workers=2)
+    y_domain = torch.utils.data.DataLoader(undefective_images, batch_size=y_batch_size, pin_memory=True, shuffle=True,
+                                           num_workers=args.num_dataloader_threads_per_dataset)
 
     tboard_summary_writer = SummaryWriter(log_dir=args.tboard_log_dir)
 
