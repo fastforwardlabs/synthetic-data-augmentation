@@ -334,6 +334,10 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
     fake_x_history = None  # A buffer to hold the history of fake x images.
     fake_y_history = None  # A buffer to hold the history of fake x images.
 
+    early_stopping_patience = 10  # epochs
+    best_epoch_num = -1
+    best_fid = np.inf
+
     global_step = 0
     fid_fn = ignite.metrics.FID(device='cuda')
     for epoch_num in range(n_epochs):
@@ -357,12 +361,23 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
         tboard_summary_writer.add_scalar('train/disc_scheduler_lr', disc_scheduler.get_last_lr()[0], global_step=global_step)
         tboard_summary_writer.add_scalar('train/gen_scheduler_lr', gen_scheduler.get_last_lr()[0], global_step=global_step)
 
-        tboard_summary_writer.add_scalar('train/fid', fid_fn.compute(), global_step=global_step)
+        fid = fid_fn.compute()
+        tboard_summary_writer.add_scalar('train/fid', fid, global_step=global_step)
+        tboard_summary_writer.add_scalar('train/epoch_num', epoch_num, global_step=global_step)
 
         torch.save(x_gen.state_dict(), os.path.join(model_save_base_path, f'x_gen.{epoch_num}.pth'))
         torch.save(x_disc.state_dict(), os.path.join(model_save_base_path, f'x_disc.{epoch_num}.pth'))
         torch.save(y_gen.state_dict(), os.path.join(model_save_base_path, f'y_gen.{epoch_num}.pth'))
         torch.save(y_disc.state_dict(), os.path.join(model_save_base_path, f'y_disc.{epoch_num}.pth'))
+
+        if fid < best_fid:
+            log.info(f'Best FID so far at epoch {epoch_num}: {fid} (replacing {best_fid} at epoch {best_epoch_num})')
+            best_fid = fid
+            best_epoch_num = epoch_num
+
+        if epoch_num - best_epoch_num >= early_stopping_patience:
+            log.info(f'FID not improved for {early_stopping_patience} epochs, so stopping early at {epoch_num}')
+            break
 
     return x_gen, x_disc, y_gen, y_disc
 
