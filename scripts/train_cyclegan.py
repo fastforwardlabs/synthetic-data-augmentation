@@ -535,7 +535,7 @@ if __name__ == '__main__':
     else:
         x_gen.apply(init_weights)
 
-    x_domain = torch.utils.data.DataLoader(defective_images, batch_size=x_batch_size, pin_memory=True, shuffle=True)
+    x_domain = torch.utils.data.DataLoader(defective_images, batch_size=x_batch_size, pin_memory=True, shuffle=True, num_workers=2)
 
     y_disc = PatchGANDiscriminator(cin=num_y_channels).to(device)
     if args.y_disc_model:
@@ -551,7 +551,7 @@ if __name__ == '__main__':
     else:
         y_gen.apply(init_weights)
 
-    y_domain = torch.utils.data.DataLoader(undefective_images, batch_size=y_batch_size, pin_memory=True, shuffle=True)
+    y_domain = torch.utils.data.DataLoader(undefective_images, batch_size=y_batch_size, pin_memory=True, shuffle=True, num_workers=2)
 
     tboard_summary_writer = SummaryWriter(log_dir=args.tboard_log_dir)
 
