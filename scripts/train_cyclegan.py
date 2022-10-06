@@ -302,7 +302,8 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
 def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.Module, y_disc: torch.nn.Module,
                 x_domain: torch.utils.data.DataLoader, y_domain: torch.utils.data.DataLoader,
                 tboard_summary_writer: torch.utils.tensorboard.SummaryWriter,
-                n_epochs: int = 10, model_save_base_path: str = 'models', disc_lr_factor: float = 1.):
+                n_epochs: int = 10, model_save_base_path: str = 'models', disc_lr_factor: float = 1.,
+                lr_decay_start_epoch: int = 100, lr_decay_num_epochs: int = 100, early_stopping_patience: int = 100):
     """
     Jointly trains 4 networks (2 generators and 2 discriminators) that are cyclically
     linked to learn conditional mappings from an x domain to a y domain of images.
@@ -319,22 +320,21 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
 
     disc_optimizer = torch.optim.Adam(itertools.chain(x_disc.parameters(), y_disc.parameters()), lr=0.0002 * disc_lr_factor, betas=[0.5, 0.999])
     disc_constant_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(disc_optimizer, lr_lambda=lambda x: 1)
-    disc_linear_scheduler = torch.optim.lr_scheduler.LinearLR(disc_optimizer, start_factor=1, end_factor=0, total_iters=100)
+    disc_linear_scheduler = torch.optim.lr_scheduler.LinearLR(disc_optimizer, start_factor=1, end_factor=0, total_iters=lr_decay_num_epochs)
     # Scheduler switches from no decay to linear decay at epoch 100
     disc_scheduler = torch.optim.lr_scheduler.SequentialLR(disc_optimizer, schedulers=[disc_constant_scheduler, disc_linear_scheduler],
-                                                           milestones=[100])
+                                                           milestones=[lr_decay_start_epoch])
 
     gen_optimizer = torch.optim.Adam(itertools.chain(y_gen.parameters(), x_gen.parameters()), lr=0.0002, betas=[0.5, 0.999])
     gen_constant_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(gen_optimizer, lr_lambda=lambda x: 1)
-    gen_linear_scheduler = torch.optim.lr_scheduler.LinearLR(gen_optimizer, start_factor=1, end_factor=0, total_iters=100)
+    gen_linear_scheduler = torch.optim.lr_scheduler.LinearLR(gen_optimizer, start_factor=1, end_factor=0, total_iters=lr_decay_num_epochs)
     # Scheduler switches from no decay to linear decay at epoch 100
     gen_scheduler = torch.optim.lr_scheduler.SequentialLR(gen_optimizer, schedulers=[gen_constant_scheduler, gen_linear_scheduler],
-                                                          milestones=[100])
+                                                          milestones=[lr_decay_start_epoch])
 
     fake_x_history = None  # A buffer to hold the history of fake x images.
     fake_y_history = None  # A buffer to hold the history of fake x images.
 
-    early_stopping_patience = 10  # epochs
     best_epoch_num = -1
     best_fid = np.inf
 
@@ -505,6 +505,24 @@ if __name__ == '__main__':
         default=1.0,
         help='Ratio for discriminator learning rate to generator learning rate.'
     )
+    parser.add_argument(
+        '--lr_decay_start_epoch',
+        type=int,
+        default=100,
+        help='Epoch at which linear decay to zero for learning rates starts.'
+    )
+    parser.add_argument(
+        '--lr_decay_num_epochs',
+        type=int,
+        default=100,
+        help='Number of epochs over which the learning rate decays linearly to 0.'
+    )
+    parser.add_argument(
+        '--early_stopping_patience',
+        type=int,
+        default=10,
+        help='Number of epochs to continue training while FID has not improved.'
+    )
 
     args = parser.parse_args()
     log.setLevel(args.log_level)
@@ -586,4 +604,6 @@ if __name__ == '__main__':
 
     train_model(x_gen, x_disc, y_gen, y_disc, x_domain, y_domain,
                 tboard_summary_writer=tboard_summary_writer,
-                n_epochs=args.num_epochs, model_save_base_path=args.model_save_dir, disc_lr_factor=args.disc_lr_factor)
+                n_epochs=args.num_epochs, model_save_base_path=args.model_save_dir, disc_lr_factor=args.disc_lr_factor,
+                lr_decay_start_epoch=args.lr_decay_start_epoch, lr_decay_num_epochs=args.lr_decay_num_epochs,
+                early_stopping_patience=args.early_stopping_patience)
