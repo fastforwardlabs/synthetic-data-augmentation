@@ -302,7 +302,7 @@ def train_step(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.
 def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn.Module, y_disc: torch.nn.Module,
                 x_domain: torch.utils.data.DataLoader, y_domain: torch.utils.data.DataLoader,
                 tboard_summary_writer: torch.utils.tensorboard.SummaryWriter,
-                n_epochs: int = 10, model_save_base_path: str = 'models'):
+                n_epochs: int = 10, model_save_base_path: str = 'models', disc_lr_factor: float = 1.):
     """
     Jointly trains 4 networks (2 generators and 2 discriminators) that are cyclically
     linked to learn conditional mappings from an x domain to a y domain of images.
@@ -317,7 +317,7 @@ def train_model(x_gen: torch.nn.Module, x_disc: torch.nn.Module, y_gen: torch.nn
 
     os.makedirs(model_save_base_path, exist_ok=True)
 
-    disc_optimizer = torch.optim.Adam(itertools.chain(x_disc.parameters(), y_disc.parameters()), lr=0.0002, betas=[0.5, 0.999])
+    disc_optimizer = torch.optim.Adam(itertools.chain(x_disc.parameters(), y_disc.parameters()), lr=0.0002 * disc_lr_factor, betas=[0.5, 0.999])
     disc_constant_scheduler = torch.optim.lr_scheduler.MultiplicativeLR(disc_optimizer, lr_lambda=lambda x: 1)
     disc_linear_scheduler = torch.optim.lr_scheduler.LinearLR(disc_optimizer, start_factor=1, end_factor=0, total_iters=100)
     # Scheduler switches from no decay to linear decay at epoch 100
@@ -499,7 +499,12 @@ if __name__ == '__main__':
         help='Number of batches per epoch. Determines the batch size. '
              'Set higher if there is not enough memory on host or device.'
     )
-
+    parser.add_argument(
+        '--disc_lr_factor',
+        type=float,
+        default=1.0,
+        help='Ratio for discriminator learning rate to generator learning rate.'
+    )
 
     args = parser.parse_args()
     log.setLevel(args.log_level)
@@ -581,4 +586,4 @@ if __name__ == '__main__':
 
     train_model(x_gen, x_disc, y_gen, y_disc, x_domain, y_domain,
                 tboard_summary_writer=tboard_summary_writer,
-                n_epochs=args.num_epochs, model_save_base_path=args.model_save_dir)
+                n_epochs=args.num_epochs, model_save_base_path=args.model_save_dir, disc_lr_factor=args.disc_lr_factor)
