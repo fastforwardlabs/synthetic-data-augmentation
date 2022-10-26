@@ -12,7 +12,7 @@ log = logging.getLogger()
 
 
 class LabeledImageWindowDataset(torch.utils.data.Dataset):
-    def __init__(self, window_df: pd.DataFrame, image_dir, device=None, read_mode=None):
+    def __init__(self, window_df: pd.DataFrame, device=None, read_mode=None):
         if not device:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         log.info(f'Using device: {device}')
@@ -24,10 +24,9 @@ class LabeledImageWindowDataset(torch.utils.data.Dataset):
         log.info(f'Read mode is {self.read_mode}')
 
         self.window_df = window_df
-        self.image_dir = image_dir
 
         test_row = self.window_df.iloc[0, :]
-        test_img = torchvision.io.read_image(os.path.join(self.image_dir, test_row.ImageId), self.read_mode)
+        test_img = torchvision.io.read_image(os.path.join(test_row.image_base, test_row.ImageId), self.read_mode)
         hw = test_row.window_size // 2
         extra = test_row.window_size % 2
         x_min, x_max = int(test_row.instance_center_x - hw), int(test_row.instance_center_x + hw + extra)
@@ -50,7 +49,7 @@ class LabeledImageWindowDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, n):
         row = self.window_df.iloc[n, :]
-        img = torchvision.io.read_image(os.path.join(self.image_dir, row.ImageId), self.read_mode)
+        img = torchvision.io.read_image(os.path.join(row.image_base, row.ImageId), self.read_mode)
         hw = row.window_size // 2
         extra = row.window_size % 2
         x_min, x_max = int(row.instance_center_x - hw), int(row.instance_center_x + hw + extra)

@@ -112,6 +112,24 @@ if __name__ == '__main__':
         default=0,
         help='Takes only the first N examples from each dataset. 0 uses all.'
     )
+    parser.add_argument(
+        '--oversample_minority_class',
+        action='store_true',
+        default=False,
+        help='Oversamples minority class to reach same data length as majority class.'
+    )
+    parser.add_argument(
+        '--synthetic_csv',
+        type=str,
+        default=None,
+        help='File to specify synthetic images to augment training set.'
+    )
+    parser.add_argument(
+        '--synthetic_image_base',
+        type=str,
+        default=os.path.join(module_base, 'data', 'synthetic_images'),
+        help='Base directory for synthetic images.'
+    )
 
     args = parser.parse_args()
     log.setLevel(args.log_level)
@@ -131,21 +149,43 @@ if __name__ == '__main__':
     df.ClassId = df.ClassId.apply(lambda x: remapped_labels[x])
     if args.head:
         df = df.iloc[:args.head]
-    train_set = LabeledImageWindowDataset(df, image_dir=args.image_base, read_mode=read_mode)
+
+    if args.oversample_minority_class:
+        class_counts = df.ClassId.value_counts().sort_values()  # smallest first
+        majority_class = class_counts.index[-1]
+        minority_class = class_counts.index[0]
+        num_majority_class = class_counts.at[majority_class]
+        num_minority_class = class_counts.at[minority_class]
+        log.info(f'num_majority_class={num_majority_class}, num_minority_class={num_minority_class}')
+        num_to_sample = num_majority_class - num_minority_class
+        oversampled = df[df.ClassId == minority_class].sample(n=num_to_sample, replace=True, random_state=42)
+        df = pd.concat([df, oversampled], ignore_index=True)
+
+    df['image_base'] = args.image_base
+
+    if args.synthetic_csv:
+        synthetic_df = pd.read_csv(args.synthetic_csv, index_col=0)
+        log.info(f'Num synthetic examples: {synthetic_df.shape[0]}')
+        synthetic_df['image_base'] = args.synthetic_image_base
+        df = pd.concat([df, synthetic_df], ignore_index=True)
+
+    train_set = LabeledImageWindowDataset(df, read_mode=read_mode)
     log.info(f'Length of train dataset: {len(train_set)}')
 
     df = pd.read_csv(args.val_csv, index_col=0)
     df.ClassId = df.ClassId.apply(lambda x: remapped_labels[x])
+    df['image_base'] = args.image_base
     if args.head:
         df = df.iloc[:args.head]
-    val_set = LabeledImageWindowDataset(df, image_dir=args.image_base, read_mode=read_mode)
+    val_set = LabeledImageWindowDataset(df, read_mode=read_mode)
     log.info(f'Length of val dataset: {len(val_set)}')
 
     df = pd.read_csv(args.test_csv, index_col=0)
     df.ClassId = df.ClassId.apply(lambda x: remapped_labels[x])
+    df['image_base'] = args.image_base
     if args.head:
         df = df.iloc[:args.head]
-    test_set = LabeledImageWindowDataset(df, image_dir=args.image_base, read_mode=read_mode)
+    test_set = LabeledImageWindowDataset(df, read_mode=read_mode)
     log.info(f'Length of test dataset: {len(test_set)}')
 
     def init_weights(module: torch.nn.Module):
