@@ -233,7 +233,7 @@ if __name__ == '__main__':
     to_save = {
         'classifier': classifier,
     }
-    handler = ignite.handlers.Checkpoint(
+    checkpoint_handler = ignite.handlers.Checkpoint(
         to_save,
         save_handler=args.model_save_dir,  # Saves to this dir
         n_saved=5,
@@ -241,7 +241,7 @@ if __name__ == '__main__':
         score_function=lambda engine: -engine.state.metrics['cross_entropy'],
         global_step_transform=ignite.handlers.global_step_from_engine(trainer),
     )
-    evaluator.add_event_handler(ignite.engine.Events.COMPLETED, handler)
+    evaluator.add_event_handler(ignite.engine.Events.COMPLETED, checkpoint_handler)
 
     handler = ignite.handlers.early_stopping.EarlyStopping(
         patience=args.early_stopping_patience,
@@ -293,8 +293,11 @@ if __name__ == '__main__':
 
     trainer.run(train_loader, max_epochs=args.num_epochs)
 
-    evaluator.run(test_loader)
-    metrics = evaluator.state.metrics
+    log.info(f'Loading best classifier from {checkpoint_handler.last_checkpoint}')
+    classifier.load_state_dict(torch.load(checkpoint_handler.last_checkpoint))
+    test_evaluator = ignite.engine.create_supervised_evaluator(classifier, metrics=val_metrics, device=device)
+    test_evaluator.run(test_loader)
+    metrics = test_evaluator.state.metrics
     tboard_logger = lambda metric, value: tboard_log_fn(metric, value, trainer.state.epoch, 'test')
     console_logger = lambda metric, value: logger_log_fn(metric, value, 'test')
     log_metrics(metrics, log_fns=[tboard_logger, console_logger])
