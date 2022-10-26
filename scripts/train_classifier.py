@@ -15,59 +15,11 @@ import ignite
 
 from torch.utils.tensorboard import SummaryWriter
 
+from datasets import LabeledImageWindowDataset
+
 
 logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
 log = logging.getLogger()
-
-
-class LabeledImageWindowDataset(torch.utils.data.Dataset):
-    def __init__(self, window_df: pd.DataFrame, image_dir, device=None, read_mode=None):
-        if not device:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        log.info(f'Using device: {device}')
-
-        if read_mode and read_mode.lower() == 'gray':
-            self.read_mode = torchvision.io.ImageReadMode.GRAY
-        else:
-            self.read_mode = torchvision.io.ImageReadMode.UNCHANGED
-        log.info(f'Read mode is {self.read_mode}')
-
-        self.window_df = window_df
-        self.image_dir = image_dir
-
-        test_row = self.window_df.iloc[0, :]
-        test_img = torchvision.io.read_image(os.path.join(self.image_dir, test_row.ImageId), self.read_mode)
-        hw = test_row.window_size // 2
-        extra = test_row.window_size % 2
-        x_min, x_max = int(test_row.instance_center_x - hw), int(test_row.instance_center_x + hw + extra)
-        test_img = test_img[..., x_min:x_max]
-
-        log.info(f'Image shapes: {test_img.shape}')
-        n_channels = test_img.shape[0]
-        means = stds = (0.5,) * n_channels
-        embiggened_size = tuple(int(s * 1.12) for s in test_img.shape[1:])
-        log.info(f'Embiggened size: {embiggened_size}')
-
-        self.preprocess = torchvision.transforms.Compose([
-            torchvision.transforms.Resize(embiggened_size, torchvision.transforms.InterpolationMode.BICUBIC),
-            torchvision.transforms.RandomCrop(test_img.shape[1:]),
-            torchvision.transforms.RandomHorizontalFlip(),
-            torchvision.transforms.ConvertImageDtype(torch.float32),
-            torchvision.transforms.Normalize(mean=means, std=stds),
-        ])
-        self.device = device
-
-    def __getitem__(self, n):
-        row = self.window_df.iloc[n, :]
-        img = torchvision.io.read_image(os.path.join(self.image_dir, row.ImageId), self.read_mode)
-        hw = row.window_size // 2
-        extra = row.window_size % 2
-        x_min, x_max = int(row.instance_center_x - hw), int(row.instance_center_x + hw + extra)
-        img = img[..., x_min:x_max]
-        return self.preprocess(img), row.ClassId
-
-    def __len__(self):
-        return self.window_df.shape[0]
 
 
 if __name__ == '__main__':

@@ -11,8 +11,7 @@ import os
 import multiprocessing
 import tqdm
 
-from dataset_utils import has_blank_space
-
+from datasets import has_blank_space
 
 logging.basicConfig(format='%(asctime)s %(message)s', level=logging.INFO)
 log = logging.getLogger()
