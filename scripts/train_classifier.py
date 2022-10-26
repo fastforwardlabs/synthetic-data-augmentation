@@ -130,6 +130,12 @@ if __name__ == '__main__':
         default=os.path.join(module_base, 'data', 'synthetic_images'),
         help='Base directory for synthetic images.'
     )
+    parser.add_argument(
+        '--lr',
+        type=float,
+        default=1e-3,
+        help='Learning rate for Adam optimizer'
+    )
 
     args = parser.parse_args()
     log.setLevel(args.log_level)
@@ -210,7 +216,7 @@ if __name__ == '__main__':
     log.info(f'Using device: {device}')
     classifier.to(device)
 
-    optimizer = torch.optim.Adam(classifier.parameters())
+    optimizer = torch.optim.Adam(classifier.parameters(), lr=args.lr)
     criterion = torch.nn.CrossEntropyLoss()
 
     trainer = ignite.engine.create_supervised_trainer(classifier, optimizer, criterion, device=device)
