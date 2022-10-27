@@ -220,6 +220,8 @@ if __name__ == '__main__':
     criterion = torch.nn.CrossEntropyLoss()
 
     trainer = ignite.engine.create_supervised_trainer(classifier, optimizer, criterion, device=device)
+    average_training_loss = ignite.metrics.Average()
+    average_training_loss.attach(trainer, "loss")
 
     val_metrics = {
         "accuracy": ignite.metrics.Accuracy(),
@@ -282,7 +284,9 @@ if __name__ == '__main__':
 
     @trainer.on(ignite.engine.Events.EPOCH_COMPLETED)
     def log_training_results(engine):
-        tboard_log_fn('loss', engine.state.output, engine.state.epoch, 'train')
+        def train_tboard_logger(metric, value):
+            tboard_log_fn(metric, value, trainer.state.epoch, 'train')
+        log_metrics(engine.state.metrics, log_fns=[train_tboard_logger])
         evaluator.run(val_loader)
 
     @evaluator.on(ignite.engine.Events.COMPLETED)
@@ -290,6 +294,19 @@ if __name__ == '__main__':
         def val_tboard_logger(metric, value):
             tboard_log_fn(metric, value, trainer.state.epoch, 'val')
         log_metrics(engine.state.metrics, log_fns=[val_tboard_logger])
+
+    lr_scheduler = ignite.handlers.ReduceLROnPlateauScheduler(
+        optimizer=optimizer,
+        metric_name="loss",
+        save_history=True,
+        trainer=trainer,
+        mode="min",
+        factor=0.5,
+        patience=(args.early_stopping_patience // 3),
+        threshold_mode='rel',
+        threshold=0.1,
+    )
+    trainer.add_event_handler(ignite.engine.Events.EPOCH_COMPLETED, lr_scheduler)
 
     trainer.run(train_loader, max_epochs=args.num_epochs)
 
