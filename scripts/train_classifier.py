@@ -219,7 +219,8 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(classifier.parameters(), lr=args.lr)
     criterion = torch.nn.CrossEntropyLoss()
 
-    trainer = ignite.engine.create_supervised_trainer(classifier, optimizer, criterion, device=device)
+    trainer = ignite.engine.create_supervised_trainer(classifier, optimizer, criterion, device=device,
+                                                      amp_mode='amp', scaler=True)
     average_training_loss = ignite.metrics.Average()
     average_training_loss.attach(trainer, "loss")
 
