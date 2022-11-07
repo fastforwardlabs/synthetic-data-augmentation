@@ -53,13 +53,20 @@ if __name__ == "__main__":
         '--random_state',
         type=int,
         default=42,
-        help='Pandas random state seed for determinstic outcomes.'
+        help='Pandas random state seed for deterministic outcomes.'
     )
     parser.add_argument(
         '--dump_dir',
         type=str,
         default=os.path.join(module_base, 'data'),
         help='Directory where output csv files will be written.'
+    )
+    parser.add_argument(
+        '--subsampled',
+        type=float,
+        action='append',
+        default=None,
+        help='Specify subsampled splits of the training set to generate.'
     )
 
     args = parser.parse_args()
@@ -103,7 +110,18 @@ if __name__ == "__main__":
     val_df.to_csv(os.path.join(args.dump_dir, 'val.csv'))
     test_df.to_csv(os.path.join(args.dump_dir, 'test.csv'))
 
+    subsampled_indices = dict()
+    for proportion in args.subsampled:
+        assert 0 < proportion < 1, 'Must be a proportion between 0 and 1'
+        subsampled = train_df[train_df.ClassId.isin(defect_classes)].sample(frac=proportion, random_state=rs)
+        subsampled_indices[proportion] = subsampled.index
+        log.info(f'For proportion {proportion} got {len(subsampled)} defective samples')
+        mask = train_df[train_df.ClassId == -1].index.union(subsampled.index)
+        train_df.loc[mask].to_csv(os.path.join(args.dump_dir, f'train.{proportion}.csv'))
+
     # This split is useful for training CycleGAN
     undefective_mask = train_df.ClassId == -1
     train_df[undefective_mask].to_csv(os.path.join(args.dump_dir, 'train_undefective_only.csv'))
     train_df[~undefective_mask].to_csv(os.path.join(args.dump_dir, 'train_defective_only.csv'))
+    for proportion, indices in subsampled_indices.items():
+        train_df.loc[indices].to_csv(os.path.join(args.dump_dir, f'train_defective_only.{proportion}.csv'))
